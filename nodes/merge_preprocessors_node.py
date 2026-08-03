@@ -15,7 +15,8 @@ from google import genai
 from google.genai import types
 
 from nodes.feature_engineering_transformer import FeatureEngineeringTransformer
-from nodes.llm_env import get_primary_api_key_model
+from utils.llm_config import build_fallback_llm
+llm=build_fallback_llm()    
 
 
 class SMOTEPlan(BaseModel):
@@ -194,13 +195,9 @@ def merge_preprocessors_node(state):
             "Use SMOTE only for clear classification imbalance and only when the minority class has enough samples."
         )
 
-        api_key, model_name = get_primary_api_key_model()
+        
 
-        smote_requested = False
-        if api_key and model_name:
-            client = genai.Client(api_key=api_key)
-
-            prompt = f"""
+        prompt = f"""
 You are a machine learning preprocessing expert.
 
 Decide whether SMOTE should be applied to the training set after feature preprocessing.
@@ -222,22 +219,14 @@ Return JSON with:
 - reason: short explanation for the decision
 """
 
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=SMOTEPlan,
-                    ),
-                )
-                smote_plan = response.parsed
+        try:
+                
+                smote_plan = llm.with_structured_output(SMOTEPlan).invoke(prompt)
                 smote_requested = bool(smote_plan.apply_smote)
                 smote_reason = smote_plan.reason or smote_reason
-            except Exception:
+        except Exception:
                 smote_requested = bool(state.get("apply_smote"))
-        else:
-            smote_requested = bool(state.get("apply_smote"))
+        
 
         if smote_requested and minority_count >= 2 and len(class_counts) >= 2:
             k_neighbors = min(5, minority_count - 1)

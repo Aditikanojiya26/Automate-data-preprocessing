@@ -5,14 +5,16 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 from google.genai import types
 from nodes.llm_env import get_primary_api_key_model
+from utils.llm_config import build_fallback_llm
 
 load_dotenv()
+llm = build_fallback_llm()
 
 class ColumnClassification(BaseModel):
-    model_config = ConfigDict(strict=True)
+    model_config = ConfigDict(strict=True)# no type coercion, only accept the types we define
 
     numerical_columns: list[str] = Field(
-        default_factory=list,
+        default_factory=list,# default to empty list if not provided
         description=(
             "Column names where values represent measurable quantities suitable for arithmetic "
             "(e.g., age, salary, distance, score). Includes continuous and discrete counts "
@@ -159,10 +161,7 @@ def split_and_classify_node(state):
             "error": None,
         }
 
-    api_key, model_name = get_primary_api_key_model()
 
-    if not api_key or not model_name:
-        return {"error": "Missing GOOGLE_API_KEY or MODEL_NAME in environment."}
 
     dtypes_info = sample_df.dtypes.to_string()
     nunique_info = sample_df.nunique().to_string()
@@ -202,21 +201,13 @@ Return JSON with:
 - smote_reason: short explanation for the SMOTE decision
 """
 
-    client = genai.Client(api_key=api_key)
-
+    
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=SplitPreprocessingPlan,
-            ),
-        )
-        # llm=build_fallback_llm()
-        # classification=llm.with_structured_output(ColumnClassification).invoke(prompt)
+        
+        llm=build_fallback_llm()
+        classification=llm.with_structured_output(ColumnClassification).invoke(prompt)
 
-        classification = response.parsed
+        
 
         target = state.get(
             "target_column"

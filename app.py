@@ -491,6 +491,7 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
 
     if "temp_dir" not in st.session_state:
+        # So mkdtemp() returns a filesystem path (directory path)
         st.session_state["temp_dir"] = tempfile.mkdtemp()
 
     temp_dir  = st.session_state["temp_dir"]
@@ -504,11 +505,8 @@ if uploaded_file is not None:
 
     if "result" not in st.session_state:
 
-        section_label("Pipeline")
-        status_placeholder = st.empty()
-        steps_placeholder  = st.empty()
+        pipeline_placeholder = st.empty()
 
-        collected_steps: list[str] = []
         latest = None
         pipeline_error = None
 
@@ -529,32 +527,22 @@ if uploaded_file is not None:
             ):
                 latest = chunk
                 steps = chunk.get("steps") or []
-
-                if steps:
-                    collected_steps = steps
-                    with steps_placeholder.container():
-                        for s in steps:
-                            step_item(s)
-
-                if "__interrupt__" in chunk:
-                    with status_placeholder.container():
-                        loading_row("Waiting for your input…")
-                else:
-                    current = steps[-1] if steps else "initializing"
-                    with status_placeholder.container():
+  
+                if "__interrupt__" not in chunk:
+                    current = steps[-1] if steps else "Initializing..."
+                    with pipeline_placeholder.container():
+                        section_label("Pipeline")
                         loading_row(current)
 
         except Exception as exc:
             pipeline_error = str(exc)
 
         if pipeline_error:
-            status_placeholder.empty()
+            pipeline_placeholder.empty()
             banner("error", "✕", f"Pipeline error: {pipeline_error}")
         else:
-            status_placeholder.empty()
+            pipeline_placeholder.empty()      # Removes BOTH heading and loading row
             result = latest
-            if result and "__interrupt__" not in result:
-                banner("success", "✓", "All pipeline stages complete.")
             st.session_state["result"] = result
 
 # ── Results & interactions ────────────────────────────────────────────────────
@@ -609,38 +597,37 @@ if "result" in st.session_state:
             st.markdown("</div>", unsafe_allow_html=True)
 
             selected_target = st.selectbox(
-                "Override target column (optional)",
-                options=["No target column"] + columns,
-                index=(columns.index(detected_target) + 1) if detected_target in columns else 0,
-            )
+            "Select target column",
+            options=["No target column"] + columns,
+            index=(columns.index(detected_target) + 1) if detected_target in columns else 0,
+        )
 
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("✓  Confirm detected target"):
-                    try:
-                        loading_row(f"Resuming with target: {detected_target}…")
-                        result = graph.invoke(Command(resume={"approved": True}), config=config)
-                        st.session_state["result"] = result
-                        st.rerun()
-                    except Exception as exc:
-                        banner("error", "✕", f"Resume failed: {exc}")
+        if st.button("✓ Confirm"):
+            try:
+                if selected_target == "No target column":
+                    resume_data = {
+                        "approved": False,
+                        "target_column": None,
+                    }
+                else:
+                    resume_data = {
+                        "approved": True,
+                        "target_column": selected_target,
+                    }
 
-            with col2:
-                st.markdown('<div class="dp-secondary">', unsafe_allow_html=True)
-                if st.button("↩  Use selected / unsupervised"):
-                    resume_data = (
-                        {"approved": False, "target_column": None}
-                        if selected_target == "No target column"
-                        else {"approved": False, "target_column": selected_target}
-                    )
-                    try:
-                        loading_row("Resuming…")
-                        result = graph.invoke(Command(resume=resume_data), config=config)
-                        st.session_state["result"] = result
-                        st.rerun()
-                    except Exception as exc:
-                        banner("error", "✕", f"Resume failed: {exc}")
-                st.markdown("</div>", unsafe_allow_html=True)
+                loading_row(f"Resuming with target: {selected_target}...")
+
+                result = graph.invoke(
+                    Command(resume=resume_data),
+                    config=config,
+                )
+
+                st.session_state["result"] = result
+                st.rerun()
+
+            except Exception as exc:
+                banner("error", "✕", f"Resume failed: {exc}")
+            
 
         # ── Feature engineering approval ──────────────────────────────────────
         elif interrupt_type == "feature_engineering_plan":

@@ -13,10 +13,9 @@ from sklearn.preprocessing import (
 )
 from typing import Literal
 from pydantic import BaseModel
+from utils.llm_config import build_fallback_llm
+llm = build_fallback_llm()
 
-from google import genai
-from google.genai import types
-from nodes.llm_env import get_primary_api_key_model
 class NumericalColumnPlan(BaseModel):
     name: str
 
@@ -77,13 +76,7 @@ def numerical_preprocessing_node(state):
     # -------------------------
     # LLM setup
     # -------------------------
-    api_key, model_name = get_primary_api_key_model()
-
-    if not api_key or not model_name:
-        return {
-            "numerical_error": "Missing GOOGLE_API_KEY or MODEL_NAME"
-        }
-    client = genai.Client(api_key=api_key)
+    
 
     prompt = f"""
 You are an ML preprocessing expert.
@@ -109,18 +102,11 @@ Columns:
     # -------------------------
     
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=NumericalPreprocessingPlan,
-            ),
-        )
-        # llm = build_fallback_llm()
-        # plan=llm.with_structured_output(NumericalPreprocessingPlan).invoke(prompt)
+        
+        llm = build_fallback_llm()
+        plan=llm.with_structured_output(NumericalPreprocessingPlan).invoke(prompt)
 
-        plan = response.parsed
+      
 
     except Exception as exc:
         return {
@@ -180,7 +166,7 @@ Columns:
     )
 
     # -------------------------
-    # SAVE PIPELINE
+      # SAVE PIPELINE
     # -------------------------
     save_path = os.path.join(temp_dir, "numerical_pipeline.pkl")
 

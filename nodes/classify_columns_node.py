@@ -5,9 +5,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from google import genai
-from google.genai import types
-from nodes.llm_env import get_primary_api_key_model
-
+from utils.llm_config import build_fallback_llm
+llm = build_fallback_llm()
 load_dotenv()
 
 
@@ -41,11 +40,6 @@ def classify_columns_node(state: dict[str, Any]) -> dict[str, Any]:
             "error": None,
         }
 
-    api_key, model_name = get_primary_api_key_model()
-
-    if not api_key or not model_name:
-        return {"error": "Missing GOOGLE_API_KEY or MODEL_NAME in environment."}
-
     sample_df = train_df[feature_columns].head(20)
     dtypes_info = sample_df.dtypes.to_string()
     nunique_info = sample_df.nunique().to_string()
@@ -75,20 +69,12 @@ Sample data (from training set only):
 {sample_df.to_string()}
 """
 
-    client = genai.Client(api_key=api_key)
+    
 
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ColumnClassification,
-            ),
-        )
+        
 
-        classification = ColumnClassification.model_validate_json(response.text)
-
+        classification = llm.with_structured_output(ColumnClassification).invoke(prompt)
         num_cols = [
             c for c in classification.numerical_columns
             if c in feature_columns and c != target_column

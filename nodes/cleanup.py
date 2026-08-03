@@ -6,9 +6,10 @@ from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 from nodes.llm_env import get_primary_api_key_model
-
+from utils.llm_config import build_fallback_llm
 load_dotenv()
 
+llm = build_fallback_llm()
 
 class ColumnsToDrop(BaseModel):
     columns: list[str] = Field(
@@ -28,49 +29,50 @@ def cleanup(state):
 
     df = pd.read_csv(input_path, encoding="latin1")
 
+    # Remove duplicate rows
     original_len = len(df)
     df.drop_duplicates(inplace=True)
     duplicates_removed = original_len - len(df)
 
     valid_columns_to_drop = []
 
-    api_key, model_name = get_primary_api_key_model()
+    prompt = f"""
+You are a senior machine learning engineer.
 
-    if api_key and model_name:
-        prompt = f"""
-    You are a senior machine learning engineer. Analyze the dataset and identify unwanted columns. Unwanted columns may include: - ID columns - serial number columns - constant columns - columns with mostly missing values - irrelevant text columns Return only valid column names from the given dataframe.
+Analyze the dataset and identify unwanted columns.
 
-    Column names and dtypes:
-    {df.dtypes.to_string()}
+Unwanted columns may include:
+- ID columns
+- Serial number columns
+- Constant columns
+- Columns with mostly missing values
+- Irrelevant text columns
 
-    Dataset sample:
-    {df.head(10).to_string()}
-    """
+Return ONLY the column names that should be dropped.
 
-        client = genai.Client(api_key=api_key)
+Column names and dtypes:
+{df.dtypes.to_string()}
 
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ColumnsToDrop,
-                ),
-            )
+Dataset sample:
+{df.head(10).to_string()}
+"""
 
-            result = ColumnsToDrop.model_validate_json(response.text)
+    try:
+        structured_llm = llm.with_structured_output(ColumnsToDrop)
 
-            valid_columns_to_drop = [
-                col for col in result.columns
-                if col in df.columns
-            ]
+        result = structured_llm.invoke(prompt)
 
-            if valid_columns_to_drop:
-                df.drop(columns=valid_columns_to_drop, inplace=True)
+        valid_columns_to_drop = [
+            col for col in result.columns
+            if col in df.columns
+        ]
 
-        except Exception:
-            valid_columns_to_drop = []
+        if valid_columns_to_drop:
+            df.drop(columns=valid_columns_to_drop, inplace=True)
+
+    except Exception as e:
+        print(f"Cleanup LLM Error: {e}")
+        valid_columns_to_drop = []
 
     df.to_csv(output_path, index=False)
 
@@ -80,5 +82,5 @@ def cleanup(state):
             f"Cleanup completed. Duplicates removed: {duplicates_removed}. Columns dropped: {valid_columns_to_drop}"
         ],
         "message": f"Cleanup completed. Columns dropped: {json.dumps(valid_columns_to_drop)}",
-        "error": None
+        "error": None,
     }

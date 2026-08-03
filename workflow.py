@@ -132,7 +132,7 @@ builder.add_conditional_edges("target_detection", error_router, {"next": "split_
 builder.add_conditional_edges("split_and_classify", error_router, {"next": "feature_engineering", "end": END})
 builder.add_conditional_edges("feature_engineering", error_router, {"next": "classify_columns", "end": END})
 builder.add_conditional_edges("classify_columns", error_router, {"next": "barrier", "end": END})
-builder.add_edge("barrier", "numerical_processing") # ← fan-out from barrier
+builder.add_edge("barrier", "numerical_processing") 
 builder.add_edge("barrier", "categorical_processing")
 builder.add_edge("numerical_processing", "merge_preprocessors")
 builder.add_edge("categorical_processing", "merge_preprocessors")

@@ -12,6 +12,8 @@ from nodes.llm_env import get_primary_api_key_model
 import shutil
 from pathlib import Path
 import os, zipfile
+from utils.llm_config import build_fallback_llm
+llm = build_fallback_llm()
 
 load_dotenv()
 
@@ -186,11 +188,7 @@ def feature_engineering_node(state: dict[str, Any]) -> dict[str, Any]:
         plan = None
         plan_dict = None
 
-    if plan is None:
-        api_key, model_name = get_primary_api_key_model()
-
-        if not api_key or not model_name:
-            return {"error": "Missing GOOGLE_API_KEY or MODEL_NAME in environment."}
+ 
 
         summary = train[feature_cols].describe(include="all").T
         missing = train[feature_cols].isna().mean().rename("missing_rate")
@@ -247,16 +245,8 @@ target_info:
 """
 
         try:
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=FeatureEngineeringPlan,
-                ),
-            )
-            plan = response.parsed
+            
+            plan = llm.with_structured_output(FeatureEngineeringPlan).invoke(prompt)
         except Exception as exc:
             return {"error": f"Feature engineering plan generation failed: {exc}"}
 

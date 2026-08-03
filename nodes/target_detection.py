@@ -10,7 +10,7 @@ from nodes.llm_env import get_primary_api_key_model
 from utils.llm_config import build_fallback_llm
 
 load_dotenv()
-
+llm = build_fallback_llm()
 
 class TargetDetectionResult(BaseModel):
     target_column: str | None = Field(
@@ -32,11 +32,6 @@ def target_detection_node(state):
 
     df = pd.read_csv(output_path)
 
-    api_key, model_name = get_primary_api_key_model()
-
-    if not api_key or not model_name:
-        return {"error": "Missing GOOGLE_API_KEY or MODEL_NAME in environment."}
-
     prompt = f"""
 You are a senior machine learning engineer.
 
@@ -54,21 +49,11 @@ Columns:
 Dataset sample:
 {df.head(30).to_string()}
 """
-
-    client = genai.Client(api_key=api_key)
-
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=TargetDetectionResult,
-            ),
-        )
-        # llm=build_fallback_llm()
-        # result=llm.with_structured_output(TargetDetectionResult).invoke(prompt)
-        result = response.parsed
+        
+        llm=build_fallback_llm()
+        result=llm.with_structured_output(TargetDetectionResult).invoke(prompt)
+        
 
     except Exception as exc:
         return {"error": f"Target detection failed: {exc}"}
@@ -101,10 +86,6 @@ Dataset sample:
         "question": f"Is '{result.target_column}' the correct target column?"
     })
 
-    # user_decision example:
-    # {"approved": True}
-    # {"approved": False, "target_column": "PlacementStatus"}
-    # {"approved": False, "target_column": None}
 
     if user_decision.get("approved") is True:
         return {
@@ -118,28 +99,4 @@ Dataset sample:
             "output_file_path": output_path  # ✓ already here
         }
 
-    selected_target = user_decision.get("target_column")
-
-    if selected_target and selected_target in df.columns:
-        return {
-            "target_column": selected_target,
-            "problem_type": "supervised",
-            "steps": state.get("steps", []) + [
-                f"Target column selected manually: {selected_target}"
-            ],
-            "message": f"Target column selected manually: {selected_target}",
-            "error": None,
-            "output_file_path": output_path  # ← ADD THIS
-        }
-
-    # If user selected "No target column"
-    return {
-        "target_column": None,
-        "problem_type": "unsupervised",
-        "steps": state.get("steps", []) + [
-            "No target column selected. Treating this as an unsupervised learning problem."
-        ],
-        "message": "No target column selected. Treating this as an unsupervised learning problem.",
-        "error": None,
-        "output_file_path": output_path  # ← ADD THIS
-    }
+    
